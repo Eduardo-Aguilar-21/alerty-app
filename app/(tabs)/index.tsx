@@ -1,9 +1,13 @@
 // app/index.tsx
 import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
-import { Button, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Button, Platform, StyleSheet, Text, View } from "react-native";
+import {
+  getNotificationsAllowed,
+  getSoundAllowed,
+} from "../../src/state/notificationPrefs";
 
-// Para que las notificaciones se muestren en primer plano
+// Handler global para cómo se muestran las notificaciones
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -23,25 +27,32 @@ export default function HomeScreen() {
           importance: Notifications.AndroidImportance.MAX,
         });
       }
-
-      // Pedir permisos
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== "granted") {
-        console.log("Permisos de notificación NO concedidos");
-      }
+      // 👀 Aquí ya NO pedimos permisos. Eso lo hace Config.
     };
 
     setupNotifications();
   }, []);
 
   const handleShowNotification = async () => {
+    const notificationsOn = getNotificationsAllowed();
+
+    if (!notificationsOn) {
+      Alert.alert(
+        "Notificaciones desactivadas",
+        "Activa las notificaciones en Configuración para recibir alertas."
+      );
+      return;
+    }
+
+    const soundOn = getSoundAllowed();
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "Alerta de prueba ⚠️",
         body: "Esta es una notificación local de Alerty.",
         data: { demo: true },
+        sound: soundOn ? "default" : false,
       },
-      // trigger null = dispara inmediatamente
       trigger: null,
     });
   };

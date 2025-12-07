@@ -1,52 +1,28 @@
 // app/_layout.tsx
-import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Stack } from "expo-router";
+import React, { useState } from "react";
 
 export default function RootLayout() {
+  const [queryClient] = useState(() => new QueryClient());
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#eab308",
-        tabBarInactiveTintColor: "#9ca3af",
-        tabBarStyle: {
-          backgroundColor: "#020617",
-          borderTopColor: "#111827",
-        },
-      }}
-    >
-      {/* Home = app/index.tsx */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
-        }}
-      />
+    <QueryClientProvider client={queryClient}>
+      <Stack screenOptions={{ headerShown: false }}>
+        {/* Login pantalla completa, sin tabs */}
+        <Stack.Screen
+          name="login"
+          options={{
+            presentation: "fullScreenModal",
+          }}
+        />
 
-      {/* Historial = app/history.tsx */}
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: "Historial",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        {/* Grupo de tabs (home, history, config) */}
+        <Stack.Screen name="(tabs)" />
 
-      {/* Config = app/config.tsx */}
-      <Tabs.Screen
-        name="config"
-        options={{
-          title: "Config",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+        {/* Detalle de alerta, encima de las tabs */}
+        <Stack.Screen name="alert/[id]" />
+      </Stack>
+    </QueryClientProvider>
   );
 }
