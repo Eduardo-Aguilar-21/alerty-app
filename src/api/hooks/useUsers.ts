@@ -1,19 +1,28 @@
 // src/api/hooks/useUsers.ts
 import {
-    keepPreviousData,
-    useMutation,
-    useQuery,
-    useQueryClient,
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 
 import type { PageResponse } from "../services/alertService";
 import type {
-    CreateUserRequest,
-    GroupUserDetail,
-    GroupUserSummary,
-    UpdateUserRequest,
+  CreateUserRequest,
+  GroupUserDetail,
+  GroupUserSummary,
+  UpdateUserRequest,
 } from "../services/userService";
 import * as userService from "../services/userService";
+
+// ============== CONFIG LISTADOS VIVOS ==============
+
+const LIVE_LIST_QUERY_OPTIONS = {
+  staleTime: 0, // siempre se considera stale
+  gcTime: 5 * 60 * 1000, // 5 minutos en caché
+  refetchInterval: 2000, // refrescar cada 2s
+  refetchIntervalInBackground: true, // aunque la pestaña no esté activa
+} as const;
 
 // ============== LIST / SEARCH ==============
 
@@ -36,6 +45,7 @@ export const useUsers = (params: {
         }
       ),
     placeholderData: keepPreviousData,
+    ...LIVE_LIST_QUERY_OPTIONS,
   });
 };
 

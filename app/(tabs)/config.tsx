@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,6 +15,7 @@ import {
   View,
 } from "react-native";
 
+import { useRegisterDevice } from "../../src/api/hooks/useDevices";
 import { useUserById } from "../../src/api/hooks/useUsers";
 import {
   getNotificationPrefs,
@@ -23,6 +25,7 @@ import {
 
 export default function ConfigScreen() {
   const router = useRouter();
+  const registerDeviceMutation = useRegisterDevice();
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -34,7 +37,7 @@ export default function ConfigScreen() {
     setSoundEnabled(prefs.soundAllowed);
   }, []);
 
-  // 🔹 Usuario de pruebas: id = 1
+  // 🔹 Usuario de pruebas: id = 1 (luego será el logueado)
   const {
     data: user,
     isLoading,
@@ -42,13 +45,11 @@ export default function ConfigScreen() {
     error,
   } = useUserById({ userId: 1 });
 
-  const currentGroupName = "Grupo de prueba"; // por ahora hardcodeado
-
   const handleLogout = () => {
     router.replace("/login");
   };
 
-  // 🔔 Toggle notificaciones: pide permisos al encender, deja de usarlas al apagar
+  // 🔔 Toggle notificaciones: pide permisos al encender, registra el device en backend, deja de usarlas al apagar
   const handleToggleNotifications = async (value: boolean) => {
     if (value) {
       // ENCENDER
@@ -67,11 +68,10 @@ export default function ConfigScreen() {
             "El sistema tiene bloqueadas las notificaciones para esta app. Actívalas desde los Ajustes del sistema."
           );
 
-          // 👉 Aquí usamos Linking.openSettings, no Notifications.openSettings
           try {
             await Linking.openSettings();
           } catch {
-            // En algunas plataformas puede no estar soportado, no pasa nada
+            // puede no estar soportado
           }
 
           setNotificationsEnabled(false);
@@ -79,11 +79,26 @@ export default function ConfigScreen() {
           return;
         }
 
-        // Permisos OK → la app considera que puede usar notifs
+        // 🔹 Aseguramos que tenemos userId (por ahora 1, luego el logueado)
+        const userId = user?.id ?? 1;
+
+        // 🔹 Obtener Expo push token (pon tu projectId real)
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad", // ⚠️ reemplaza por el real
+        });
+
+        // 🔹 Registrar dispositivo en backend
+        await registerDeviceMutation.mutateAsync({
+          userId,
+          expoPushToken: tokenData.data, // "ExponentPushToken[xxxx]"
+          platform: Platform.OS, // "android" | "ios"
+        });
+
+        // Permisos OK y registro OK → la app considera que puede usar notifs
         setNotificationsEnabled(true);
         setNotificationsAllowed(true);
       } catch (e) {
-        console.error("Error solicitando permisos de notificaciones", e);
+        console.error("Error solicitando/registrando notificaciones", e);
         Alert.alert(
           "Error",
           "No se pudieron configurar las notificaciones en este momento."
@@ -105,6 +120,8 @@ export default function ConfigScreen() {
       } catch (e) {
         console.warn("Error cancelando notificaciones programadas", e);
       }
+
+      // (Futuro) aquí podrías llamar a un endpoint para desactivar el device
     }
   };
 
@@ -126,8 +143,7 @@ export default function ConfigScreen() {
       <View style={styles.headerWrapper}>
         <Text style={styles.title}>Configuración</Text>
         <Text style={styles.subtitle}>
-          Ajusta tu cuenta, grupo y las preferencias de Alerty en este
-          dispositivo.
+          Ajusta tu cuenta y las preferencias de Alerty en este dispositivo.
         </Text>
       </View>
 
@@ -140,7 +156,7 @@ export default function ConfigScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Ionicons name="person-circle-outline" size={18} color="#e5e7eb" />
-            <Text style={styles.sectionTitle}>Cuenta y grupo</Text>
+            <Text style={styles.sectionTitle}>Cuenta</Text>
           </View>
 
           <View style={styles.card}>
@@ -180,17 +196,6 @@ export default function ConfigScreen() {
                     </Text>
                   </>
                 )}
-              </View>
-            </View>
-
-            <View style={[styles.cardRow, { marginTop: 14 }]}>
-              <View style={styles.cardColumn}>
-                <Text style={styles.cardLabel}>Grupo vinculado</Text>
-                <Text style={styles.cardValue}>{currentGroupName}</Text>
-                <Text style={styles.cardHint}>
-                  Solo recibirás alertas pertenecientes a este grupo (luego lo
-                  haremos dinámico).
-                </Text>
               </View>
             </View>
           </View>
@@ -276,7 +281,6 @@ export default function ConfigScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ... tus estilos igual que antes
   container: {
     flex: 1,
     backgroundColor: "#020617",

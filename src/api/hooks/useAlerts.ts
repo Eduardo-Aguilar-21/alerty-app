@@ -1,18 +1,18 @@
 // src/api/hooks/useAlerts.ts
 
 import {
-    keepPreviousData,
-    useMutation,
-    useQuery,
-    useQueryClient,
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 
 import type {
-    AlertDetail,
-    AlertSummary,
-    CreateAlertRequest,
-    PageResponse,
-    UpdateAlertRequest,
+  AlertDetail,
+  AlertSummary,
+  CreateAlertRequest,
+  PageResponse,
+  UpdateAlertRequest,
 } from "../services/alertService"; // 👈 import relativo
 import * as alertService from "../services/alertService"; // 👈 import relativo
 
@@ -26,6 +26,18 @@ export const useAlert = (id?: number) => {
   });
 };
 
+// Config común para listados “vivos”
+const LIVE_LIST_QUERY_OPTIONS = {
+  // Siempre considerar los datos como stale para que el polling tenga sentido
+  staleTime: 0,
+  // Mantener cache un rato razonable (5 min) antes de limpiarla
+  gcTime: 5 * 60 * 1000,
+  // Polling cada 2 segundos
+  refetchInterval: 2000,
+  // Seguir haciendo polling aunque la pestaña esté en segundo plano
+  refetchIntervalInBackground: true,
+} as const;
+
 // ========== LIST ALL (sin grupo) ==========
 
 export const useAlerts = (params: { page?: number; size?: number }) => {
@@ -37,6 +49,7 @@ export const useAlerts = (params: { page?: number; size?: number }) => {
         size: params.size,
       }),
     placeholderData: keepPreviousData,
+    ...LIVE_LIST_QUERY_OPTIONS,
   });
 };
 
@@ -59,6 +72,7 @@ export const useAlertsByGroup = (params: {
         size: params.size,
       }),
     placeholderData: keepPreviousData,
+    ...LIVE_LIST_QUERY_OPTIONS,
   });
 };
 
@@ -85,6 +99,7 @@ export const useAlertsByGroupAndRange = (params: {
         size: params.size,
       }),
     placeholderData: keepPreviousData,
+    ...LIVE_LIST_QUERY_OPTIONS,
   });
 };
 
