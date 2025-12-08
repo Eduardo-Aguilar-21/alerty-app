@@ -73,6 +73,13 @@ export const getUserById = async (userId: number, groupId?: number) => {
   return response.data;
 };
 
+export const getUserByUsername = async (username: string) => {
+  const response = await api.get<GroupUserDetail>(`${endpoint}/by-username`, {
+    params: { username },
+  });
+  return response.data;
+};
+
 // ============== CREATE ==============
 // POST /api/users?groupId=..
 export const createUser = async (

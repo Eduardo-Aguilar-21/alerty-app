@@ -31,6 +31,10 @@ export async function getToken() {
   return SecureStore.getItemAsync(TOKEN_KEY);
 }
 
+export async function getUsername() {
+  return SecureStore.getItemAsync(USERNAME_KEY);
+}
+
 export async function clearAuthData() {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   await SecureStore.deleteItemAsync(USERNAME_KEY);

@@ -16,12 +16,19 @@ import {
 } from "react-native";
 
 import { useRegisterDevice } from "../../src/api/hooks/useDevices";
-import { useUserById } from "../../src/api/hooks/useUsers";
+// ⬇️ ahora usamos username en lugar de id fijo
+import { useUserByUsername } from "../../src/api/hooks/useUsers";
+
 import {
   getNotificationPrefs,
   setNotificationsAllowed,
   setSoundAllowed,
 } from "../../src/state/notificationPrefs";
+
+import {
+  clearAuthData,
+  getUsername,
+} from "../../src/api/authStorage";
 
 export default function ConfigScreen() {
   const router = useRouter();
@@ -30,26 +37,48 @@ export default function ConfigScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // 🔹 Cargar prefs iniciales desde el "store" simple
+  // username del usuario logueado
+  const [username, setUsername] = useState<string | null>(null);
+
+  // Cargar prefs iniciales + username desde SecureStore
   useEffect(() => {
-    const prefs = getNotificationPrefs();
-    setNotificationsEnabled(prefs.notificationsAllowed);
-    setSoundEnabled(prefs.soundAllowed);
+    const init = async () => {
+      const prefs = getNotificationPrefs();
+      setNotificationsEnabled(prefs.notificationsAllowed);
+      setSoundEnabled(prefs.soundAllowed);
+
+      const storedUsername = await getUsername();
+      if (storedUsername) {
+        setUsername(storedUsername);
+      }
+    };
+
+    void init();
   }, []);
 
-  // 🔹 Usuario de pruebas: id = 1 (luego será el logueado)
+  // Usuario desde backend, usando el username guardado
   const {
     data: user,
     isLoading,
     isError,
     error,
-  } = useUserById({ userId: 1 });
+  } = useUserByUsername(username ?? undefined);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // limpia token / username / etc.
+    await clearAuthData();
+
+    // Opcional: cancelar notificaciones programadas
+    try {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    } catch (e) {
+      console.warn("Error cancelando notificaciones en logout", e);
+    }
+
     router.replace("/login");
   };
 
-  // 🔔 Toggle notificaciones: pide permisos al encender, registra el device en backend, deja de usarlas al apagar
+  // Toggle notificaciones: pide permisos, registra device, etc.
   const handleToggleNotifications = async (value: boolean) => {
     if (value) {
       // ENCENDER
@@ -79,22 +108,30 @@ export default function ConfigScreen() {
           return;
         }
 
-        // 🔹 Aseguramos que tenemos userId (por ahora 1, luego el logueado)
-        const userId = user?.id ?? 1;
+        // Necesitamos el userId real del backend
+        const userId = user?.id;
+        if (!userId) {
+          Alert.alert(
+            "Usuario no cargado",
+            "No se pudo determinar el usuario actual para registrar el dispositivo."
+          );
+          setNotificationsEnabled(false);
+          setNotificationsAllowed(false);
+          return;
+        }
 
-        // 🔹 Obtener Expo push token (pon tu projectId real)
+        // Obtener Expo push token (pon tu projectId real)
         const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad", // ⚠️ reemplaza por el real
+          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad", // ⚠️ tu projectId real
         });
 
-        // 🔹 Registrar dispositivo en backend
+        // Registrar dispositivo en backend
         await registerDeviceMutation.mutateAsync({
           userId,
           expoPushToken: tokenData.data, // "ExponentPushToken[xxxx]"
           platform: Platform.OS, // "android" | "ios"
         });
 
-        // Permisos OK y registro OK → la app considera que puede usar notifs
         setNotificationsEnabled(true);
         setNotificationsAllowed(true);
       } catch (e) {
@@ -107,7 +144,7 @@ export default function ConfigScreen() {
         setNotificationsAllowed(false);
       }
     } else {
-      // APAGAR: tu app deja de usarlas, cancela programadas, etc.
+      // APAGAR
       setNotificationsEnabled(false);
       setNotificationsAllowed(false);
 
@@ -121,7 +158,7 @@ export default function ConfigScreen() {
         console.warn("Error cancelando notificaciones programadas", e);
       }
 
-      // (Futuro) aquí podrías llamar a un endpoint para desactivar el device
+      // Futuro: desregistrar device en backend
     }
   };
 
@@ -147,7 +184,7 @@ export default function ConfigScreen() {
         </Text>
       </View>
 
-      {/* CONTENIDO SCROLLEABLE (solo desde aquí hacia abajo) */}
+      {/* CONTENIDO SCROLLEABLE */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -162,9 +199,11 @@ export default function ConfigScreen() {
           <View style={styles.card}>
             <View style={styles.cardRow}>
               <View style={styles.cardColumn}>
-                <Text style={styles.cardLabel}>Usuario (id = 1)</Text>
+                <Text style={styles.cardLabel}>
+                  Usuario {username ? `(@${username})` : ""}
+                </Text>
 
-                {isLoading && (
+                {isLoading && username && (
                   <View style={styles.inlineRow}>
                     <ActivityIndicator size="small" color="#6366f1" />
                     <Text style={[styles.cardValue, { marginLeft: 8 }]}>
@@ -182,6 +221,13 @@ export default function ConfigScreen() {
                       {error?.message ?? "Revisa la conexión con el servidor."}
                     </Text>
                   </View>
+                )}
+
+                {!username && !isLoading && !isError && (
+                  <Text style={styles.cardHint}>
+                    No se encontró username en el almacenamiento seguro. Vuelve
+                    a iniciar sesión.
+                  </Text>
                 )}
 
                 {user && !isLoading && !isError && (
@@ -283,7 +329,7 @@ export default function ConfigScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#020617",
+  backgroundColor: "#020617",
   },
   headerWrapper: {
     paddingTop: 56,

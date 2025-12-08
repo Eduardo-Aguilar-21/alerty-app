@@ -62,6 +62,14 @@ export const useUserById = (params: { userId?: number; groupId?: number }) => {
   });
 };
 
+export const useUserByUsername = (username?: string) => {
+  return useQuery<GroupUserDetail, Error>({
+    queryKey: ["group-user-by-username", username],
+    enabled: !!username && username.trim().length > 0,
+    queryFn: () => userService.getUserByUsername(username as string),
+  });
+};
+
 // ============== CREATE ==============
 
 export const useCreateUser = () => {

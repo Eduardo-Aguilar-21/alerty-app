@@ -60,8 +60,24 @@ export default function LoginScreen() {
       // Navega al home de la app móvil
       router.replace("/" as any);
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err?.message ?? "Error al iniciar sesión");
+      console.error("Error en login móvil:", err);
+
+      let msg: string;
+
+      const status = err?.response?.status as number | undefined;
+
+      if (status === 401 || status === 403) {
+        // 🔒 Credenciales incorrectas (usuario/pass o DNI)
+        msg = "Credenciales incorrectas. Revisa tus datos e inténtalo de nuevo.";
+      } else {
+        msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Error al iniciar sesión";
+      }
+
+      setErrorMsg(msg);
     }
   };
 
