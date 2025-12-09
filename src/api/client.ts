@@ -1,8 +1,8 @@
 // src/api/client.ts
 import axios from "axios";
-import { getToken } from "./authStorage";
+import { getValidToken } from "./authStorage";
 
-const API_BASE_URL = "https://samloto.com:4016"; 
+const API_BASE_URL = "https://samloto.com:4016";
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -11,7 +11,7 @@ export const api = axios.create({
 
 api.interceptors.request.use(
   async (config) => {
-    const token = await getToken();
+    const token = await getValidToken(); // 👈 solo tokens NO expirados
 
     if (token) {
       config.headers = config.headers ?? {};

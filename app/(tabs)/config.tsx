@@ -1,3 +1,4 @@
+// app/config.tsx (o app/(tabs)/config.tsx)
 import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
@@ -16,8 +17,7 @@ import {
 } from "react-native";
 
 import { useRegisterDevice } from "../../src/api/hooks/useDevices";
-// ⬇️ ahora usamos username en lugar de id fijo
-import { useUserByUsername } from "../../src/api/hooks/useUsers";
+import { useUserById } from "../../src/api/hooks/useUsers";
 
 import {
   getNotificationPrefs,
@@ -27,7 +27,7 @@ import {
 
 import {
   clearAuthData,
-  getUsername,
+  getAuthData,
 } from "../../src/api/authStorage";
 
 export default function ConfigScreen() {
@@ -37,32 +37,34 @@ export default function ConfigScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // username del usuario logueado
+  // auth: username + userId desde SecureStore
   const [username, setUsername] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
-  // Cargar prefs iniciales + username desde SecureStore
+  // Cargar prefs iniciales + auth desde SecureStore
   useEffect(() => {
     const init = async () => {
       const prefs = getNotificationPrefs();
       setNotificationsEnabled(prefs.notificationsAllowed);
       setSoundEnabled(prefs.soundAllowed);
 
-      const storedUsername = await getUsername();
-      if (storedUsername) {
-        setUsername(storedUsername);
-      }
+      const auth = await getAuthData();
+      setUsername(auth?.username ?? null);
+      setUserId(auth?.userId ?? null);
+      setAuthLoaded(true);
     };
 
     void init();
   }, []);
 
-  // Usuario desde backend, usando el username guardado
+  // Usuario desde backend usando userId (igual que en web)
   const {
     data: user,
     isLoading,
     isError,
     error,
-  } = useUserByUsername(username ?? undefined);
+  } = useUserById(userId ?? undefined);
 
   const handleLogout = async () => {
     // limpia token / username / etc.
@@ -109,8 +111,8 @@ export default function ConfigScreen() {
         }
 
         // Necesitamos el userId real del backend
-        const userId = user?.id;
-        if (!userId) {
+        const backendUserId = user?.id;
+        if (!backendUserId) {
           Alert.alert(
             "Usuario no cargado",
             "No se pudo determinar el usuario actual para registrar el dispositivo."
@@ -120,14 +122,14 @@ export default function ConfigScreen() {
           return;
         }
 
-        // Obtener Expo push token (pon tu projectId real)
+        // Obtener Expo push token (projectId real)
         const tokenData = await Notifications.getExpoPushTokenAsync({
           projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad", // ⚠️ tu projectId real
         });
 
         // Registrar dispositivo en backend
         await registerDeviceMutation.mutateAsync({
-          userId,
+          userId: backendUserId,
           expoPushToken: tokenData.data, // "ExponentPushToken[xxxx]"
           platform: Platform.OS, // "android" | "ios"
         });
@@ -174,6 +176,35 @@ export default function ConfigScreen() {
     setSoundAllowed(value);
   };
 
+  // ⏳ Mientras no cargó auth
+  if (!authLoaded) {
+    return (
+      <View style={styles.centerFull}>
+        <ActivityIndicator size="small" color="#6366f1" />
+        <Text style={styles.centerMessageText}>Cargando sesión…</Text>
+      </View>
+    );
+  }
+
+  // ❌ Si no hay userId -> misma idea que en web
+  if (!userId) {
+    return (
+      <View style={styles.centerFull}>
+        <Text style={[styles.centerMessageText, { fontSize: 14 }]}>
+          No se encontró información de usuario en la sesión. Vuelve a iniciar sesión.
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.replace("/login")}
+          style={[styles.logoutButton, { marginTop: 16 }]}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="log-in-outline" size={18} color="#fecaca" />
+          <Text style={styles.logoutText}>Ir al login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* HEADER FIJO (sin scroll) */}
@@ -191,7 +222,7 @@ export default function ConfigScreen() {
       >
         {/* Sección: Cuenta / sesión */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+          <View className="sectionHeader" style={styles.sectionHeader}>
             <Ionicons name="person-circle-outline" size={18} color="#e5e7eb" />
             <Text style={styles.sectionTitle}>Cuenta</Text>
           </View>
@@ -203,7 +234,7 @@ export default function ConfigScreen() {
                   Usuario {username ? `(@${username})` : ""}
                 </Text>
 
-                {isLoading && username && (
+                {isLoading && (
                   <View style={styles.inlineRow}>
                     <ActivityIndicator size="small" color="#6366f1" />
                     <Text style={[styles.cardValue, { marginLeft: 8 }]}>
@@ -225,8 +256,7 @@ export default function ConfigScreen() {
 
                 {!username && !isLoading && !isError && (
                   <Text style={styles.cardHint}>
-                    No se encontró username en el almacenamiento seguro. Vuelve
-                    a iniciar sesión.
+                    No se encontró username en la sesión. Vuelve a iniciar sesión.
                   </Text>
                 )}
 
@@ -237,8 +267,10 @@ export default function ConfigScreen() {
                       @{user.username} · DNI: {user.dni}
                     </Text>
                     <Text style={styles.cardHint}>
-                      Rol: {user.role} ·{" "}
-                      {user.active ? "Activo" : "Inactivo"}
+                      Rol: {user.role} · {user.active ? "Activo" : "Inactivo"}
+                    </Text>
+                    <Text style={styles.cardHint}>
+                      ID interno: {user.id}
                     </Text>
                   </>
                 )}
@@ -301,10 +333,10 @@ export default function ConfigScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.aboutTitle}>Alerty (cliente móvil)</Text>
+            <Text style={styles.aboutTitle}>Alerty · Cliente móvil</Text>
             <Text style={styles.aboutText}>
-              Esta app se conecta a la plataforma web de Alerty para recibir
-              eventos de montacargas y mostrar notificaciones en tiempo real.
+              Esta app se conecta a la plataforma Alerty para recibir eventos de
+              montacargas y mostrar notificaciones en tiempo real.
             </Text>
             <Text style={styles.aboutMeta}>Versión 0.1.0 · Build demo</Text>
           </View>
@@ -329,7 +361,20 @@ export default function ConfigScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  backgroundColor: "#020617",
+    backgroundColor: "#020617",
+  },
+  centerFull: {
+    flex: 1,
+    backgroundColor: "#020617",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  centerMessageText: {
+    marginTop: 6,
+    color: "#9ca3af",
+    fontSize: 12,
+    textAlign: "center",
   },
   headerWrapper: {
     paddingTop: 56,

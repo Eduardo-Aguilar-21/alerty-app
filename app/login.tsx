@@ -13,8 +13,21 @@ import {
 
 import { saveAuthData } from "../src/api/authStorage";
 import { useLoginWithDni, useLoginWithUsername } from "../src/api/hooks/useAuth";
+import type { AuthResponse } from "../src/api/services/authService";
 
 type LoginMode = "password" | "dni";
+
+// Para tipar el error del backend sin usar `any`
+type ErrorWithResponse = {
+  response?: {
+    status?: number;
+    data?: {
+      message?: string;
+      error?: string;
+    };
+  };
+  message?: string;
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -22,66 +35,78 @@ export default function LoginScreen() {
   const [mode, setMode] = useState<LoginMode>("password");
 
   // Modo usuario + contraseña
-  const [username, setUsername] = useState("demo");
-  const [password, setPassword] = useState("123456");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   // Modo DNI
-  const [dni, setDni] = useState("12345678");
+  const [dni, setDni] = useState("");
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const loginUserPass = useLoginWithUsername();
   const loginDni = useLoginWithDni();
 
+  const isLoading = loginUserPass.isPending || loginDni.isPending;
+
   const handleLogin = async () => {
     setErrorMsg(null);
 
     try {
+      let data: AuthResponse;
+
       if (mode === "password") {
-        const data = await loginUserPass.mutateAsync({ username, password });
-
-        await saveAuthData({
-          token: data.token,
-          username: data.username,
-          dni: data.dni,
-          role: data.role,
-        });
+        data = await loginUserPass.mutateAsync({ username, password });
       } else {
-        const data = await loginDni.mutateAsync({ dni });
-
-        await saveAuthData({
-          token: data.token,
-          username: data.username,
-          dni: data.dni,
-          role: data.role,
-        });
+        data = await loginDni.mutateAsync({ dni });
       }
 
+      // Guardar token y datos básicos de usuario en SecureStore (móvil)
+      await saveAuthData({
+        token: data.token,
+        username: data.username,
+        dni: data.dni,
+        role: data.role,
+        companyId: data.companyId ?? undefined,
+        userId: data.userId ?? undefined,
+      });
+
       // Navega al home de la app móvil
-      router.replace("/" as any);
-    } catch (err: any) {
+      router.replace("/" as never);
+    } catch (err: unknown) {
       console.error("Error en login móvil:", err);
 
-      let msg: string;
+      let status: number | undefined;
 
-      const status = err?.response?.status as number | undefined;
+      if (typeof err === "object" && err !== null) {
+        const maybeError = err as ErrorWithResponse;
+        if (typeof maybeError.response?.status === "number") {
+          status = maybeError.response.status;
+        }
+      }
+
+      let msg = "No se pudo iniciar sesión. Inténtalo nuevamente.";
 
       if (status === 401 || status === 403) {
-        // 🔒 Credenciales incorrectas (usuario/pass o DNI)
-        msg = "Credenciales incorrectas. Revisa tus datos e inténtalo de nuevo.";
-      } else {
+        if (mode === "password") {
+          msg = "Usuario o contraseña incorrectos.";
+        } else {
+          msg = "No pudimos validar el DNI ingresado.";
+        }
+      }
+
+      // Si no es 401/403 y backend mandó mensaje, lo usamos como fallback
+      if (!status) {
+        const maybeError = err as ErrorWithResponse;
         msg =
-          err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          err?.message ||
-          "Error al iniciar sesión";
+          maybeError.response?.data?.message ||
+          maybeError.response?.data?.error ||
+          maybeError.message ||
+          msg;
       }
 
       setErrorMsg(msg);
     }
   };
-
-  const isLoading = loginUserPass.isPending || loginDni.isPending;
 
   return (
     <KeyboardAvoidingView
@@ -90,7 +115,7 @@ export default function LoginScreen() {
     >
       <View style={styles.card}>
         {/* HEADER */}
-        <View className="header" style={styles.header}>
+        <View style={styles.header}>
           <Ionicons name="warning-outline" size={40} color="#facc15" />
           <Text style={styles.title}>Alerty</Text>
           <Text style={styles.subtitle}>
@@ -215,7 +240,7 @@ export default function LoginScreen() {
   );
 }
 
-// ⬇️ estilos igual que tenías
+// estilos
 const styles = StyleSheet.create({
   container: {
     flex: 1,

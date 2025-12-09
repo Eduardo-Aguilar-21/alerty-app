@@ -1,7 +1,7 @@
 // app/alert/[id].tsx
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 
+import { getAuthData } from "../../../src/api/authStorage";
 import {
   useAcknowledgeAlert,
   useAlert,
@@ -39,6 +40,7 @@ function isCriticalSeverity(severity?: string | null): boolean {
  * Construye un documento HTML completo a partir del rawPayload del backend,
  * intentando emular cómo se ve en la web:
  * - Quitamos DOCTYPE, <html>, <head>, <body> originales
+ * - Quitamos <img ...> porque en mobile se ven mal
  * - Añadimos nuestro propio <meta viewport> y CSS para responsive
  */
 function buildHtmlFromPayload(rawHtml: string): string {
@@ -49,10 +51,13 @@ function buildHtmlFromPayload(rawHtml: string): string {
     .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
     .replace(/<\/?body[^>]*>/gi, "");
 
-  // 2) Opcional: trim
+  // 2) Quitamos imágenes (solo borra la etiqueta <img>, deja el resto igual)
+  cleaned = cleaned.replace(/<img[^>]*>/gi, "");
+
+  // 3) Opcional: trim
   cleaned = cleaned.trim();
 
-  // 3) Envolvemos en un HTML propio, con estilos similares a un email web
+  // 4) Envolvemos en un HTML propio
   return `
 <!DOCTYPE html>
 <html lang="es">
@@ -63,7 +68,6 @@ function buildHtmlFromPayload(rawHtml: string): string {
       content="width=device-width, initial-scale=1, maximum-scale=1"
     />
     <style>
-      /* Reset básico */
       * {
         box-sizing: border-box;
       }
@@ -99,17 +103,8 @@ function buildHtmlFromPayload(rawHtml: string): string {
         vertical-align: top;
       }
 
-      /* El template del correo a veces fija width=600px, etc.
-         Forzamos que nunca se salga del ancho del móvil. */
       table[style] {
         width: 100% !important;
-      }
-
-      img {
-        max-width: 100% !important;
-        height: auto !important;
-        display: block;
-        margin: 8px 0;
       }
 
       header {
@@ -138,14 +133,29 @@ export default function AlertDetailScreen() {
   const { height } = useWindowDimensions();
 
   const params = useLocalSearchParams<{ id?: string }>();
-  const id = useMemo(() => Number(params.id), [params.id]);
+  const id = Number(params.id);
+
+  // 🔐 auth para sacar companyId (igual idea que web)
+  const [companyId, setCompanyId] = useState<number | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const auth = await getAuthData();
+      setCompanyId(auth?.companyId ?? null);
+      setAuthLoaded(true);
+    })();
+  }, []);
 
   const {
     data: alert,
     isLoading,
     isError,
     error,
-  } = useAlert(Number.isNaN(id) ? undefined : id);
+  } = useAlert(
+    companyId ?? undefined,
+    Number.isNaN(id) ? undefined : id
+  );
 
   const { mutateAsync: acknowledgeAlert, isPending: isAcking } =
     useAcknowledgeAlert();
@@ -153,13 +163,41 @@ export default function AlertDetailScreen() {
   // En vez de back(), mandamos directo a /history
   const handleBack = () => {
     router.push("/history");
-    // o router.replace("/history");
   };
 
   const handleMarkReviewed = async () => {
     if (!alert || alert.acknowledged) return;
-    await acknowledgeAlert(alert.id);
+    if (!companyId) return; // por seguridad, igual que en web
+    await acknowledgeAlert({ companyId, id: alert.id });
   };
+
+  // Mientras aún no cargamos auth
+  if (!authLoaded) {
+    return (
+      <View style={styles.centerFull}>
+        <ActivityIndicator size="small" color="#6366f1" />
+        <Text style={styles.centerText}>Cargando sesión…</Text>
+      </View>
+    );
+  }
+
+  // Si no hay companyId -> sesión rota / sin empresa (igual que en web)
+  if (!companyId) {
+    return (
+      <View style={styles.centerFull}>
+        <Text style={styles.errorTitle}>
+          No se encontró una empresa asociada a la sesión actual.
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.replace("/login")}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={16} color="#e5e7eb" />
+          <Text style={styles.backButtonText}>Ir al login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (Number.isNaN(id)) {
     return (
@@ -187,7 +225,9 @@ export default function AlertDetailScreen() {
       <View style={styles.centerFull}>
         <Ionicons name="alert-circle-outline" size={32} color="#f97373" />
         <Text style={styles.errorTitle}>Error al cargar la alerta</Text>
-        <Text style={styles.errorText}>{error?.message}</Text>
+        <Text style={styles.errorText}>
+          {error?.message ?? "No se encontró la alerta."}
+        </Text>
         <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={16} color="#e5e7eb" />
           <Text style={styles.backButtonText}>Volver a historial</Text>
@@ -210,11 +250,11 @@ export default function AlertDetailScreen() {
   const eventTime = new Date(alert.eventTime).toLocaleString();
   const receivedTime = new Date(alert.receivedAt).toLocaleString();
 
-  // 👇 Construimos el HTML final para el WebView (solo si hay rawPayload)
-  const htmlContent = useMemo(
-    () => (alert.rawPayload ? buildHtmlFromPayload(alert.rawPayload) : ""),
-    [alert.rawPayload]
-  );
+  // 👇 Ahora ES SOLO UNA CONSTANTE, SIN useMemo
+  const htmlContent =
+    alert && alert.rawPayload
+      ? buildHtmlFromPayload(alert.rawPayload)
+      : "";
 
   return (
     <ScrollView
@@ -265,7 +305,6 @@ export default function AlertDetailScreen() {
               <Text
                 style={[
                   styles.severityPillText,
-                  { color: critical ? "#fecaca" : "#facc15" },
                 ]}
               >
                 {critical ? "Crítica" : "Advertencia / Info"}
@@ -353,19 +392,19 @@ export default function AlertDetailScreen() {
         <Text style={styles.blockBody}>{descriptionText}</Text>
       </View>
 
-      {/* Contenido técnico (HTML completo, igual que en web) */}
+      {/* Contenido técnico (HTML completo, sin imágenes) */}
       {alert.rawPayload && (
         <View style={styles.blockCard}>
           <Text style={styles.blockTitle}>Detalle técnico (HTML)</Text>
           <Text style={styles.blockSubtitle}>
             Este contenido proviene directamente del sistema de origen y se
-            muestra usando un WebView para respetar tablas, estilos e imágenes.
+            muestra usando un WebView para respetar tablas y estilos (se omitieron las imágenes).
           </Text>
 
           <View
             style={[
               styles.rawPayloadBox,
-              { height: Math.max(420, height * 0.65) }, // alto mínimo cómodo
+              { height: Math.max(420, height * 0.65) },
             ]}
           >
             <WebView
@@ -426,6 +465,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: "#020617",
+    marginTop: 12,
   },
   backButtonText: {
     color: "#e5e7eb",
@@ -491,7 +531,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    borderRadius: 999,
+    borderRadius  : 999,
     borderWidth: 1,
     borderColor: "#16a34a",
     backgroundColor: "#065f46",

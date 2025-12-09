@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 
+import { getAuthData } from "../../src/api/authStorage";
 import { useAlerts } from "../../src/api/hooks/useAlerts";
 import type { AlertSummary } from "../../src/api/services/alertService";
 import {
@@ -65,8 +66,21 @@ export default function HomeScreen() {
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
 
-  // Alertas: primera página, tamaño chico
+  // 🔐 auth para sacar companyId (igual idea que en web)
+  const [companyId, setCompanyId] = useState<number | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const auth = await getAuthData();
+      setCompanyId(auth?.companyId ?? null);
+      setAuthLoaded(true);
+    })();
+  }, []);
+
+  // Alertas: primera página, tamaño chico, filtrado por companyId
   const { data, isLoading, isError, error } = useAlerts({
+    companyId: companyId ?? undefined,
     page: 0,
     size: 5,
   });
@@ -122,6 +136,35 @@ export default function HomeScreen() {
   const handleGoConfig = () => {
     router.push("/config");
   };
+
+  // ⏳ Mientras no se cargó la sesión
+  if (!authLoaded) {
+    return (
+      <View style={styles.centerFull}>
+        <ActivityIndicator size="small" color="#6366f1" />
+        <Text style={styles.centerMessageText}>Cargando sesión…</Text>
+      </View>
+    );
+  }
+
+  // ❌ Si no hay companyId -> igual mensaje que en web
+  if (!companyId) {
+    return (
+      <View style={styles.centerFull}>
+        <Text style={[styles.centerMessageText, { fontSize: 14 }]}>
+          No se encontró una empresa asociada a la sesión actual.
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.replace("/login")}
+          style={[styles.configButton, { marginTop: 16 }]}
+          activeOpacity={0.9}
+        >
+          <Ionicons name="log-in-outline" size={18} color="#e5e7eb" />
+          <Text style={styles.configButtonText}>Ir al login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -224,7 +267,9 @@ export default function HomeScreen() {
                 <Text style={styles.errorTitle}>
                   Error al obtener alertas
                 </Text>
-                <Text style={styles.errorText}>{error?.message}</Text>
+                <Text style={styles.errorText}>
+                  {error?.message ?? "Revisa la conexión con el servidor."}
+                </Text>
               </View>
             )}
 
@@ -323,6 +368,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#020617",
+  },
+  centerFull: {
+    flex: 1,
+    backgroundColor: "#020617",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
   },
   headerWrapper: {
     paddingTop: 56,

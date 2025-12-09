@@ -1,4 +1,3 @@
-// src/api/hooks/useUsers.ts
 import {
   keepPreviousData,
   useMutation,
@@ -18,31 +17,31 @@ import * as userService from "../services/userService";
 // ============== CONFIG LISTADOS VIVOS ==============
 
 const LIVE_LIST_QUERY_OPTIONS = {
-  staleTime: 0, // siempre se considera stale
-  gcTime: 5 * 60 * 1000, // 5 minutos en caché
-  refetchInterval: 2000, // refrescar cada 2s
-  refetchIntervalInBackground: true, // aunque la pestaña no esté activa
+  staleTime: 0,
+  gcTime: 5 * 60 * 1000,
+  refetchInterval: 2000,
+  refetchIntervalInBackground: true,
 } as const;
 
 // ============== LIST / SEARCH ==============
 
 export const useUsers = (params: {
-  groupId?: number;
+  companyId?: number;
   q?: string;
   page?: number;
   size?: number;
 }) => {
   return useQuery<PageResponse<GroupUserSummary>, Error>({
-    queryKey: ["group-users", params],
-    enabled: !!params.groupId, // solo dispara si hay groupId
+    queryKey: ["users", params],
+    enabled: !!params.companyId, // solo dispara si hay companyId
     queryFn: () =>
       userService.searchUsers(
         params as {
-          groupId: number;
+          companyId: number;
           q?: string;
           page?: number;
           size?: number;
-        }
+        },
       ),
     placeholderData: keepPreviousData,
     ...LIVE_LIST_QUERY_OPTIONS,
@@ -50,21 +49,18 @@ export const useUsers = (params: {
 };
 
 // ============== READ ONE ==============
-// Puede usar solo userId, o userId + groupId (backend soporta ambos)
 
-export const useUserById = (params: { userId?: number; groupId?: number }) => {
-  const { groupId, userId } = params;
-
+export const useUserById = (userId?: number) => {
   return useQuery<GroupUserDetail, Error>({
-    queryKey: ["group-user", params],
-    enabled: !!userId, // con solo userId ya vale
-    queryFn: () => userService.getUserById(userId as number, groupId),
+    queryKey: ["user", userId],
+    enabled: !!userId,
+    queryFn: () => userService.getUserById(userId as number),
   });
 };
 
 export const useUserByUsername = (username?: string) => {
   return useQuery<GroupUserDetail, Error>({
-    queryKey: ["group-user-by-username", username],
+    queryKey: ["user", "by-username", username],
     enabled: !!username && username.trim().length > 0,
     queryFn: () => userService.getUserByUsername(username as string),
   });
@@ -75,16 +71,13 @@ export const useUserByUsername = (username?: string) => {
 export const useCreateUser = () => {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (args: { groupId: number; data: CreateUserRequest }) =>
-      userService.createUser(args.groupId, args.data),
+  return useMutation<GroupUserDetail, Error, { data: CreateUserRequest }>({
+    mutationFn: (args) => userService.createUser(args.data),
     onSuccess: (_created, variables) => {
-      // refresca listas de usuarios del grupo
+      // refresca listas de usuarios de la empresa
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({
-        queryKey: ["group-users"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["group-users", { groupId: variables.groupId }],
+        queryKey: ["users", { companyId: variables.data.companyId }],
       });
     },
   });
@@ -95,23 +88,20 @@ export const useCreateUser = () => {
 export const useUpdateUser = () => {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (args: {
-      groupId: number;
-      userId: number;
-      data: UpdateUserRequest;
-    }) =>
-      userService.updateUser(args.groupId, args.userId, args.data),
+  return useMutation<
+    GroupUserDetail,
+    Error,
+    { companyId: number; userId: number; data: UpdateUserRequest }
+  >({
+    mutationFn: (args) =>
+      userService.updateUser(args.companyId, args.userId, args.data),
     onSuccess: (_updated, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["group-users"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({
-        queryKey: [
-          "group-user",
-          {
-            groupId: variables.groupId,
-            userId: variables.userId,
-          },
-        ],
+        queryKey: ["users", { companyId: variables.companyId }],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["user", variables.userId],
       });
     },
   });
@@ -122,19 +112,15 @@ export const useUpdateUser = () => {
 export const useDeleteUser = () => {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: (args: { groupId: number; userId: number }) =>
-      userService.deleteUser(args.groupId, args.userId),
+  return useMutation<void, Error, { companyId: number; userId: number }>({
+    mutationFn: (args) => userService.deleteUser(args.companyId, args.userId),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["group-users"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({
-        queryKey: [
-          "group-user",
-          {
-            groupId: variables.groupId,
-            userId: variables.userId,
-          },
-        ],
+        queryKey: ["users", { companyId: variables.companyId }],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["user", variables.userId],
       });
     },
   });

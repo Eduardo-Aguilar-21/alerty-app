@@ -1,11 +1,10 @@
-// src/api/hooks/useAuth.ts
 import { useMutation } from "@tanstack/react-query";
 import {
-    loginWithDni,
-    loginWithUsername,
-    type AuthResponse,
-    type LoginByDniRequest,
-    type LoginRequest,
+  loginWithDni,
+  loginWithUsername,
+  type AuthResponse,
+  type LoginByDniRequest,
+  type LoginRequest,
 } from "../services/authService";
 
 export const useLoginWithUsername = () => {
