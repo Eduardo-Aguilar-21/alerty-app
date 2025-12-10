@@ -9,9 +9,13 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIndentifier": "com.eduardoaguilar.alerts",
+      "buildNumber":"1"
     },
     "android": {
+      "package": "com.eduardoaguilar.alerts",
+      "versionCode": "1",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

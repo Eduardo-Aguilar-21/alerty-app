@@ -1,4 +1,4 @@
-// app/config.tsx (o app/(tabs)/config.tsx)
+// app/config.tsx  (o app/(tabs)/config.tsx)
 import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
@@ -20,9 +20,9 @@ import { useRegisterDevice } from "../../src/api/hooks/useDevices";
 import { useUserById } from "../../src/api/hooks/useUsers";
 
 import {
-  getNotificationPrefs,
+  clearNotificationPrefs,
+  loadNotificationPrefs,
   setNotificationsAllowed,
-  setSoundAllowed,
 } from "../../src/state/notificationPrefs";
 
 import {
@@ -35,7 +35,6 @@ export default function ConfigScreen() {
   const registerDeviceMutation = useRegisterDevice();
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(true);
 
   // auth: username + userId desde SecureStore
   const [username, setUsername] = useState<string | null>(null);
@@ -45,10 +44,11 @@ export default function ConfigScreen() {
   // Cargar prefs iniciales + auth desde SecureStore
   useEffect(() => {
     const init = async () => {
-      const prefs = getNotificationPrefs();
+      // 1) Cargamos prefs persistidas (SecureStore)
+      const prefs = await loadNotificationPrefs();
       setNotificationsEnabled(prefs.notificationsAllowed);
-      setSoundEnabled(prefs.soundAllowed);
 
+      // 2) Cargamos auth
       const auth = await getAuthData();
       setUsername(auth?.username ?? null);
       setUserId(auth?.userId ?? null);
@@ -67,10 +67,9 @@ export default function ConfigScreen() {
   } = useUserById(userId ?? undefined);
 
   const handleLogout = async () => {
-    // limpia token / username / etc.
     await clearAuthData();
+    await clearNotificationPrefs(); // limpio también las prefs de notificaciones
 
-    // Opcional: cancelar notificaciones programadas
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
     } catch (e) {
@@ -83,7 +82,7 @@ export default function ConfigScreen() {
   // Toggle notificaciones: pide permisos, registra device, etc.
   const handleToggleNotifications = async (value: boolean) => {
     if (value) {
-      // ENCENDER
+      // ============= ENCENDER =============
       try {
         const settings = await Notifications.getPermissionsAsync();
         let finalStatus = settings.status;
@@ -110,9 +109,8 @@ export default function ConfigScreen() {
           return;
         }
 
-        // Necesitamos el userId real del backend
-        const backendUserId = user?.id;
-        if (!backendUserId) {
+        const backendUserId = user?.id ?? null;
+        if (backendUserId == null) {
           Alert.alert(
             "Usuario no cargado",
             "No se pudo determinar el usuario actual para registrar el dispositivo."
@@ -122,22 +120,29 @@ export default function ConfigScreen() {
           return;
         }
 
-        // Obtener Expo push token (projectId real)
         const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad", // ⚠️ tu projectId real
+          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad",
         });
 
-        // Registrar dispositivo en backend
         await registerDeviceMutation.mutateAsync({
           userId: backendUserId,
-          expoPushToken: tokenData.data, // "ExponentPushToken[xxxx]"
-          platform: Platform.OS, // "android" | "ios"
+          expoPushToken: tokenData.data,
+          platform: Platform.OS,
+          active: true, // 👈 ENCENDER en backend
         });
 
         setNotificationsEnabled(true);
         setNotificationsAllowed(true);
-      } catch (e) {
+      } catch (e: any) {
         console.error("Error solicitando/registrando notificaciones", e);
+        if (e?.response) {
+          console.log(
+            "📡 Error backend registerDevice:",
+            e.response.status,
+            e.response.data
+          );
+        }
+
         Alert.alert(
           "Error",
           "No se pudieron configurar las notificaciones en este momento."
@@ -146,13 +151,9 @@ export default function ConfigScreen() {
         setNotificationsAllowed(false);
       }
     } else {
-      // APAGAR
+      // ============= APAGAR =============
       setNotificationsEnabled(false);
       setNotificationsAllowed(false);
-
-      // Opcional: también apaga sonido
-      setSoundEnabled(false);
-      setSoundAllowed(false);
 
       try {
         await Notifications.cancelAllScheduledNotificationsAsync();
@@ -160,20 +161,24 @@ export default function ConfigScreen() {
         console.warn("Error cancelando notificaciones programadas", e);
       }
 
-      // Futuro: desregistrar device en backend
-    }
-  };
+      try {
+        // volvemos a pedir el token (normalmente es el mismo)
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: "bdd02b90-eff5-4d05-8347-e71f1ed057ad",
+        });
 
-  const handleToggleSound = (value: boolean) => {
-    if (!notificationsEnabled && value) {
-      Alert.alert(
-        "Primero activa notificaciones",
-        "Activa las notificaciones push para poder usar el sonido."
-      );
-      return;
+        if (user?.id) {
+          await registerDeviceMutation.mutateAsync({
+            userId: user.id,
+            expoPushToken: tokenData.data,
+            platform: Platform.OS,
+            active: false, // 👈 APAGAR en backend
+          });
+        }
+      } catch (e) {
+        console.warn("Error desactivando device en backend", e);
+      }
     }
-    setSoundEnabled(value);
-    setSoundAllowed(value);
   };
 
   // ⏳ Mientras no cargó auth
@@ -211,7 +216,7 @@ export default function ConfigScreen() {
       <View style={styles.headerWrapper}>
         <Text style={styles.title}>Configuración</Text>
         <Text style={styles.subtitle}>
-          Ajusta tu cuenta y las preferencias de Alerty en este dispositivo.
+          Ajusta tu cuenta y las preferencias de Alerts en este dispositivo.
         </Text>
       </View>
 
@@ -222,7 +227,7 @@ export default function ConfigScreen() {
       >
         {/* Sección: Cuenta / sesión */}
         <View style={styles.section}>
-          <View className="sectionHeader" style={styles.sectionHeader}>
+          <View style={styles.sectionHeader}>
             <Ionicons name="person-circle-outline" size={18} color="#e5e7eb" />
             <Text style={styles.sectionTitle}>Cuenta</Text>
           </View>
@@ -269,9 +274,7 @@ export default function ConfigScreen() {
                     <Text style={styles.cardHint}>
                       Rol: {user.role} · {user.active ? "Activo" : "Inactivo"}
                     </Text>
-                    <Text style={styles.cardHint}>
-                      ID interno: {user.id}
-                    </Text>
+                    <Text style={styles.cardHint}>ID interno: {user.id}</Text>
                   </>
                 )}
               </View>
@@ -287,34 +290,17 @@ export default function ConfigScreen() {
           </View>
 
           <View style={styles.card}>
-            <View style={styles.switchRow}>
+            <View className="switchRow" style={styles.switchRow}>
               <View style={styles.switchTexts}>
                 <Text style={styles.switchTitle}>Notificaciones push</Text>
                 <Text style={styles.switchDescription}>
-                  Permitir que Alerty envíe alertas a este dispositivo.
+                  Permitir que Alerts envíe alertas a este dispositivo.
                 </Text>
               </View>
               <Switch
                 value={notificationsEnabled}
                 onValueChange={handleToggleNotifications}
                 thumbColor={notificationsEnabled ? "#facc15" : "#6b7280"}
-                trackColor={{ false: "#111827", true: "#f59e0b" }}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.switchRow}>
-              <View style={styles.switchTexts}>
-                <Text style={styles.switchTitle}>Sonido</Text>
-                <Text style={styles.switchDescription}>
-                  Reproducir un sonido cuando llegue una alerta.
-                </Text>
-              </View>
-              <Switch
-                value={soundEnabled}
-                onValueChange={handleToggleSound}
-                thumbColor={soundEnabled ? "#facc15" : "#6b7280"}
                 trackColor={{ false: "#111827", true: "#f59e0b" }}
               />
             </View>
@@ -333,9 +319,9 @@ export default function ConfigScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.aboutTitle}>Alerty · Cliente móvil</Text>
+            <Text style={styles.aboutTitle}>Alerts · Cliente móvil</Text>
             <Text style={styles.aboutText}>
-              Esta app se conecta a la plataforma Alerty para recibir eventos de
+              Esta app se conecta a la plataforma para recibir eventos de
               montacargas y mostrar notificaciones en tiempo real.
             </Text>
             <Text style={styles.aboutMeta}>Versión 0.1.0 · Build demo</Text>
