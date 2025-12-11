@@ -1,4 +1,3 @@
-// app/index.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
@@ -14,7 +13,7 @@ import {
 } from "react-native";
 
 import { getAuthData } from "../../src/api/authStorage";
-import { useAlerts } from "../../src/api/hooks/useAlerts";
+import { useAlertsByUser } from "../../src/api/hooks/useAlerts";
 import type { AlertSummary } from "../../src/api/services/alertService";
 import {
   getNotificationsAllowed,
@@ -66,29 +65,29 @@ export default function HomeScreen() {
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
 
-  // 🔐 auth para sacar companyId (igual idea que en web)
+  // 🔐 auth para sacar companyId y userId
   const [companyId, setCompanyId] = useState<number | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
 
   useEffect(() => {
     void (async () => {
       const auth = await getAuthData();
       setCompanyId(auth?.companyId ?? null);
+      setUserId(auth?.userId ?? null);
       setAuthLoaded(true);
     })();
   }, []);
 
-  // Alertas: primera página, tamaño chico, filtrado por companyId
-  const { data, isLoading, isError, error } = useAlerts({
+  // Alertas: primera página, tamaño chico, filtrado por companyId + userId
+  const { data, isLoading, isError, error } = useAlertsByUser({
     companyId: companyId ?? undefined,
+    userId: userId ?? undefined,
     page: 0,
     size: 5,
   });
 
-  const alerts: AlertSummary[] = useMemo(
-    () => data?.content ?? [],
-    [data]
-  );
+  const alerts: AlertSummary[] = useMemo(() => data?.content ?? [], [data]);
 
   const pendingOnPage = alerts.filter((a) => !a.acknowledged).length;
   const criticalOnPage = alerts.filter(
@@ -147,12 +146,12 @@ export default function HomeScreen() {
     );
   }
 
-  // ❌ Si no hay companyId -> igual mensaje que en web
-  if (!companyId) {
+  // ❌ Si no hay companyId o userId -> igual criterio que en web
+  if (!companyId || !userId) {
     return (
       <View style={styles.centerFull}>
         <Text style={[styles.centerMessageText, { fontSize: 14 }]}>
-          No se encontró una empresa asociada a la sesión actual.
+          No se encontró una empresa o usuario válidos para la sesión actual.
         </Text>
         <TouchableOpacity
           onPress={() => router.replace("/login")}
@@ -191,7 +190,7 @@ export default function HomeScreen() {
             <Text style={styles.kpiLabel}>Alertas registradas</Text>
             <Text style={styles.kpiValue}>{totalElements}</Text>
             <Text style={styles.kpiHint}>
-              Total en el sistema (todas las páginas).
+              Total en el sistema para este usuario.
             </Text>
           </View>
 
@@ -239,11 +238,7 @@ export default function HomeScreen() {
         {/* Sección: últimas alertas */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={18}
-              color="#e5e7eb"
-            />
+            <Ionicons name="alert-circle-outline" size={18} color="#e5e7eb" />
             <Text style={styles.sectionTitle}>Últimas alertas</Text>
           </View>
 
@@ -259,14 +254,8 @@ export default function HomeScreen() {
 
             {isError && !isLoading && (
               <View style={styles.centerMessage}>
-                <Ionicons
-                  name="warning-outline"
-                  size={28}
-                  color="#f97373"
-                />
-                <Text style={styles.errorTitle}>
-                  Error al obtener alertas
-                </Text>
+                <Ionicons name="warning-outline" size={28} color="#f97373" />
+                <Text style={styles.errorTitle}>Error al obtener alertas</Text>
                 <Text style={styles.errorText}>
                   {error?.message ?? "Revisa la conexión con el servidor."}
                 </Text>
@@ -332,11 +321,7 @@ export default function HomeScreen() {
               activeOpacity={0.9}
               onPress={handleGoHistory}
             >
-              <Ionicons
-                name="list-outline"
-                size={16}
-                color="#6366f1"
-              />
+              <Ionicons name="list-outline" size={16} color="#6366f1" />
               <Text style={styles.linkButtonText}>Ver historial completo</Text>
             </TouchableOpacity>
           </View>
@@ -349,11 +334,7 @@ export default function HomeScreen() {
             activeOpacity={0.9}
             onPress={handleGoConfig}
           >
-            <Ionicons
-              name="settings-outline"
-              size={18}
-              color="#e5e7eb"
-            />
+            <Ionicons name="settings-outline" size={18} color="#e5e7eb" />
             <Text style={styles.configButtonText}>
               Abrir configuración de Alerty
             </Text>

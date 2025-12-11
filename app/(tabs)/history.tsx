@@ -1,21 +1,20 @@
-// app/history.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { getAuthData } from "../../src/api/authStorage";
 import {
-    useAcknowledgeAlert,
-    useAlerts,
+  useAcknowledgeAlert,
+  useAlertsByUser,
 } from "../../src/api/hooks/useAlerts";
 import type { AlertSummary } from "../../src/api/services/alertService";
 
@@ -96,9 +95,7 @@ function StatusBadge({ acknowledged }: { acknowledged: boolean }) {
         ]}
       >
         <Ionicons name="checkmark-circle-outline" size={12} color="#6ee7b7" />
-        <Text style={[styles.badgeTextBase, { color: "#bbf7d0" }]}>
-          Atendida
-        </Text>
+        <Text style={[styles.badgeTextBase, { color: "#bbf7d0" }]}>Atendida</Text>
       </View>
     );
   }
@@ -114,9 +111,7 @@ function StatusBadge({ acknowledged }: { acknowledged: boolean }) {
       ]}
     >
       <Ionicons name="alert-circle-outline" size={12} color="#fecaca" />
-      <Text style={[styles.badgeTextBase, { color: "#fecaca" }]}>
-        Pendiente
-      </Text>
+      <Text style={[styles.badgeTextBase, { color: "#fecaca" }]}>Pendiente</Text>
     </View>
   );
 }
@@ -134,19 +129,22 @@ export default function HistoryScreen() {
   const pageSize = 20;
 
   const [companyId, setCompanyId] = useState<number | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
 
-  // 🔐 Cargar auth desde SecureStore y sacar companyId (igual idea que getAuthDataWeb)
+  // 🔐 Cargar auth desde SecureStore y sacar companyId y userId
   useEffect(() => {
     void (async () => {
       const auth = await getAuthData();
       setCompanyId(auth?.companyId ?? null);
+      setUserId(auth?.userId ?? null);
       setAuthLoaded(true);
     })();
   }, []);
 
-  const { data, isLoading, isError, error } = useAlerts({
+  const { data, isLoading, isError, error } = useAlertsByUser({
     companyId: companyId ?? undefined,
+    userId: userId ?? undefined,
     page,
     size: pageSize,
   });
@@ -154,10 +152,7 @@ export default function HistoryScreen() {
   const { mutateAsync: acknowledgeAlert, isPending: isAcking } =
     useAcknowledgeAlert();
 
-  const alerts: AlertSummary[] = useMemo(
-    () => data?.content ?? [],
-    [data]
-  );
+  const alerts: AlertSummary[] = useMemo(() => data?.content ?? [], [data]);
 
   const totalElements = data?.totalElements ?? 0;
   const totalOnPage = alerts.length;
@@ -202,7 +197,7 @@ export default function HistoryScreen() {
 
   const handleMarkReviewed = async (alert: AlertSummary) => {
     if (alert.acknowledged) return;
-    if (!companyId) return; // seguridad, igual que en web
+    if (!companyId) return; // seguridad
 
     await acknowledgeAlert({ companyId, id: alert.id });
   };
@@ -226,12 +221,12 @@ export default function HistoryScreen() {
     );
   }
 
-  // Si no hay companyId (sesión rota / sin empresa), igual que en web
-  if (!companyId) {
+  // Si no hay companyId o userId (sesión rota / sin empresa/usuario)
+  if (!companyId || !userId) {
     return (
       <View style={[styles.container, { justifyContent: "center" }]}>
         <Text style={{ color: "#9ca3af", fontSize: 13, textAlign: "center" }}>
-          No hay empresa seleccionada. Vuelve a iniciar sesión.
+          No hay empresa o usuario válido. Vuelve a iniciar sesión.
         </Text>
       </View>
     );
@@ -242,17 +237,12 @@ export default function HistoryScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <Ionicons
-            name="notifications-outline"
-            size={20}
-            color="#6366f1"
-          />
+          <Ionicons name="notifications-outline" size={20} color="#6366f1" />
           <Text style={styles.title}>Alertas del sistema</Text>
         </View>
         <Text style={styles.subtitle}>
           Historial de todas las alertas provenientes de los montacargas
-          registrados en la plataforma. Los datos vienen directo del
-          backend.
+          registrados en la plataforma. Los datos vienen directo del backend.
         </Text>
       </View>
 
@@ -261,27 +251,21 @@ export default function HistoryScreen() {
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Total en el sistema</Text>
           <Text style={styles.kpiValue}>{totalElements}</Text>
-          <Text style={styles.kpiHint}>
-            Total de alertas registradas.
-          </Text>
+          <Text style={styles.kpiHint}>Total de alertas registradas.</Text>
         </View>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Pendientes (página)</Text>
           <Text style={[styles.kpiValue, { color: "#fca5a5" }]}>
             {pendingOnPage}
           </Text>
-          <Text style={styles.kpiHint}>
-            Alertas sin confirmar atención.
-          </Text>
+          <Text style={styles.kpiHint}>Alertas sin confirmar atención.</Text>
         </View>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Críticas (página)</Text>
           <Text style={[styles.kpiValue, { color: "#fbbf24" }]}>
             {criticalOnPage}
           </Text>
-          <Text style={styles.kpiHint}>
-            Mapeadas a severidad alta.
-          </Text>
+          <Text style={styles.kpiHint}>Mapeadas a severidad alta.</Text>
         </View>
       </View>
 
@@ -346,19 +330,13 @@ export default function HistoryScreen() {
         {isLoading && (
           <View style={styles.centerMessage}>
             <ActivityIndicator size="small" color="#6366f1" />
-            <Text style={styles.centerMessageText}>
-              Cargando alertas…
-            </Text>
+            <Text style={styles.centerMessageText}>Cargando alertas…</Text>
           </View>
         )}
 
         {isError && !isLoading && (
           <View style={styles.centerMessage}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={32}
-              color="#f97373"
-            />
+            <Ionicons name="alert-circle-outline" size={32} color="#f97373" />
             <Text style={styles.errorTitle}>Error al cargar alertas</Text>
             <Text style={styles.errorText}>{error?.message}</Text>
           </View>
@@ -382,8 +360,7 @@ export default function HistoryScreen() {
                     : "No hay alertas que coincidan con los filtros."}
                 </Text>
                 <Text style={styles.emptyText}>
-                  Ajusta los filtros o espera a que se generen nuevas
-                  alertas.
+                  Ajusta los filtros o espera a que se generen nuevas alertas.
                 </Text>
               </View>
             }
@@ -431,16 +408,10 @@ export default function HistoryScreen() {
                   </View>
 
                   <View style={styles.cardFooter}>
-                    <Ionicons
-                      name="time-outline"
-                      size={14}
-                      color="#9ca3af"
-                    />
+                    <Ionicons name="time-outline" size={14} color="#9ca3af" />
                     <Text style={styles.cardFooterText}>
                       Evento:{" "}
-                      {new Date(
-                        item.eventTime
-                      ).toLocaleString(undefined, {
+                      {new Date(item.eventTime).toLocaleString(undefined, {
                         day: "2-digit",
                         month: "2-digit",
                         hour: "2-digit",
@@ -457,9 +428,7 @@ export default function HistoryScreen() {
                     />
                     <Text style={styles.cardFooterText}>
                       Recibida:{" "}
-                      {new Date(
-                        item.receivedAt
-                      ).toLocaleString(undefined, {
+                      {new Date(item.receivedAt).toLocaleString(undefined, {
                         day: "2-digit",
                         month: "2-digit",
                         hour: "2-digit",
@@ -485,20 +454,14 @@ export default function HistoryScreen() {
                         size={14}
                         color="#bbf7d0"
                       />
-                      <Text style={styles.actionPrimaryText}>
-                        Revisada
-                      </Text>
+                      <Text style={styles.actionPrimaryText}>Revisada</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => handleViewDetails(item)}
                       style={[styles.actionButton, styles.actionSecondary]}
                     >
-                      <Ionicons
-                        name="eye-outline"
-                        size={14}
-                        color="#e5e7eb"
-                      />
+                      <Ionicons name="eye-outline" size={14} color="#e5e7eb" />
                       <Text style={styles.actionSecondaryText}>
                         Detalles
                       </Text>
@@ -552,12 +515,7 @@ type SeverityChipProps = {
   onPress: () => void;
 };
 
-function SeverityChip({
-  label,
-  active,
-  bucket,
-  onPress,
-}: SeverityChipProps) {
+function SeverityChip({ label, active, bucket, onPress }: SeverityChipProps) {
   let activeBg = "#111827";
   let activeBorder = "#4b5563";
   let activeText = "#e5e7eb";
@@ -588,12 +546,7 @@ function SeverityChip({
       ]}
       activeOpacity={0.9}
     >
-      <Text
-        style={[
-          styles.chipText,
-          active && { color: activeText },
-        ]}
-      >
+      <Text style={[styles.chipText, active && { color: activeText }]}>
         {label}
       </Text>
     </TouchableOpacity>
